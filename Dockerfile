@@ -22,7 +22,7 @@ RUN echo 'slapd slapd/move_old_database boolean true' | debconf-set-selections
 RUN echo 'slapd slapd/no_configuration boolean false' | debconf-set-selections
 
 # install slapd
-RUN apt update && DEBIAN_FRONTEND=noninteractive apt-get -y install slapd ldap-utils
+RUN apt update && apt full-upgrade -y && DEBIAN_FRONTEND=noninteractive apt-get -y install slapd ldap-utils
 
 # Create a non-root user
 RUN addgroup --quiet --gid ${groupid} ${groupname} && \
