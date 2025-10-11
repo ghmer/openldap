@@ -1,0 +1,71 @@
+name: Build and Push Docker Image
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: garthako/openldap
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [ -z "$DOCKERHUB_USERNAME" ] || [ -z "$DOCKERHUB_TOKEN" ]; then
+            echo "Docker Hub credentials are not configured."
+            exit 1
+          fi
+          echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin || {
+            echo "Docker Hub login failed."
+            exit 1
+          }
+
+      - name: Prepare image tags
+        id: prep
+        run: |
+          REF_TYPE="${GITHUB_REF_TYPE:-branch}"
+          REF_NAME="${GITHUB_REF_NAME:-${GITHUB_REF##*/}}"
+          if [ "$REF_TYPE" = "tag" ]; then
+            echo "tags=--tag ${IMAGE_NAME}:${REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            BRANCH_NAME="${REF_NAME//\//-}"
+            SHORT_SHA="$(git rev-parse --short HEAD)"
+            TAG_ARGS="--tag ${IMAGE_NAME}:${BRANCH_NAME}-${SHORT_SHA}"
+            if [ "$REF_NAME" = "main" ]; then
+              TAG_ARGS="${TAG_ARGS} --tag ${IMAGE_NAME}:latest"
+            fi
+            echo "tags=${TAG_ARGS}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and push Docker image
+        run: |
+          docker buildx build \
+            --platform linux/amd64,linux/arm64,linux/arm/v7 \
+            --file Dockerfile \
+            --push \
+            --cache-from type=gha \
+            --cache-to type=gha,mode=max \
+            ${{ steps.prep.outputs.tags }} \
+            . || {
+              echo "Docker image build or push failed."
+              exit 1
+            }
