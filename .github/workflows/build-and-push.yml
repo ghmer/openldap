@@ -3,13 +3,14 @@ name: Build and Push Docker Image
 on:
   push:
     branches:
-      - main
+      - '**'
     tags:
       - 'v*'
   workflow_dispatch:
 
 env:
   IMAGE_NAME: garthako/openldap
+  IMAGE_TAG: v2.6
 
 jobs:
   build-and-push:
@@ -41,20 +42,29 @@ jobs:
 
       - name: Prepare image tags
         id: prep
+        env:
+          GITHUB_IMAGE_TAG: ${{ vars.IMAGE_TAG }}
         run: |
-          REF_TYPE="${GITHUB_REF_TYPE:-branch}"
-          REF_NAME="${GITHUB_REF_NAME:-${GITHUB_REF##*/}}"
-          if [ "$REF_TYPE" = "tag" ]; then
-            echo "tags=--tag ${IMAGE_NAME}:${REF_NAME}" >> "$GITHUB_OUTPUT"
+          # Use GitHub environment variable if set, otherwise use workflow default
+          if [ -n "$GITHUB_IMAGE_TAG" ]; then
+            VERSION="$GITHUB_IMAGE_TAG"
           else
-            BRANCH_NAME="${REF_NAME//\//-}"
-            SHORT_SHA="$(git rev-parse --short HEAD)"
-            TAG_ARGS="--tag ${IMAGE_NAME}:${BRANCH_NAME}-${SHORT_SHA}"
-            if [ "$REF_NAME" = "main" ]; then
-              TAG_ARGS="${TAG_ARGS} --tag ${IMAGE_NAME}:latest"
-            fi
-            echo "tags=${TAG_ARGS}" >> "$GITHUB_OUTPUT"
+            VERSION="${IMAGE_TAG}"
           fi
+          
+          # Start with base tags (version from env/var + latest)
+          TAG_ARGS="--tag ${IMAGE_NAME}:${VERSION} --tag ${IMAGE_NAME}:latest"
+          
+          # If this is a tag push, add the Git tag as an additional Docker tag
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            GIT_TAG="${GITHUB_REF#refs/tags/}"
+            TAG_ARGS="${TAG_ARGS} --tag ${IMAGE_NAME}:${GIT_TAG}"
+            echo "Building with tags: ${VERSION}, ${GIT_TAG}, latest"
+          else
+            echo "Building with tags: ${VERSION}, latest"
+          fi
+          
+          echo "tags=${TAG_ARGS}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push Docker image
         run: |
