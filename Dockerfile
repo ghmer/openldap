@@ -26,7 +26,7 @@ RUN apt update && apt full-upgrade -y && DEBIAN_FRONTEND=noninteractive apt-get 
 
 # Create a non-root user
 RUN addgroup --quiet --gid ${groupid} ${groupname} && \
-    adduser --uid ${userid} --gid ${groupid} --no-create-home --disabled-password ${username} && \
+    adduser --uid ${userid} --gid ${groupid} --comment "" --no-create-home --disabled-password ${username} && \
     mkdir -p /var/run/slapd /import/ldif /import/schema /import/certs && \
     chown -R ${userid}:${groupid} /etc/ldap /var/run/slapd /var/lib/ldap /import && \
     rm -rf /var/lib/ldap/* 
