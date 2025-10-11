@@ -1,0 +1,16 @@
+# Dependabot configuration for monitoring Docker base image updates
+version: 2
+updates:
+  # Monitor Dockerfile for base image updates
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "02:00"
+    labels:
+      - "dependencies"
+      - "docker"
+    commit-message:
+      prefix: "docker"
+      include: "scope"
