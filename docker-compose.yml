@@ -1,0 +1,73 @@
+services:
+  openldap:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: openldap:latest
+    container_name: openldap
+    hostname: ldap.example.com
+    ulimits:
+      nofile: 1024
+    
+    # Environment variables for LDAP configuration
+    environment:
+      # Required variables
+      LDAP_BASE_DN: "dc=example,dc=com"
+      LDAP_ADMIN_USER: "cn=admin"
+      LDAP_ADMIN_PW: "admin_password"
+      LDAP_CONFIG_ADMIN_PW: "config_password"
+      
+      # Optional: TLS/SSL configuration (disabled by default)
+      LDAP_ENABLE_TLS: "true"
+      LDAP_TLS_CERT_FILE: "/import/certs/server.crt"
+      LDAP_TLS_KEY_FILE: "/import/certs/server.key"
+      LDAP_TLS_CA_FILE: "/import/certs/ca.crt"
+      LDAP_TLS_VERIFY_CLIENT: "try" # never | allow | try | demand
+      
+      # Optional: Anonymous binding (enabled by default)
+      LDAP_ALLOW_ANON_BINDING: "false"
+      
+      # Optional: Custom directories
+      LDAP_SCHEMA_DIRECTORY: "/import/schema"
+      LDAP_LDIF_DATA_DIRECTORY: "/import/ldif"
+    
+    ports:
+      - "1389:1389"   # LDAP
+      - "1636:1636"   # LDAPS # comment if disabled
+    
+    volumes:
+      # Persistent data volumes
+      - ldap_data:/var/lib/ldap
+      - ldap_config:/etc/ldap/slapd.d
+      
+      # Optional: Mount custom schemas and LDIF files
+      # - ./schemas:/import/schema:ro
+      # - ./ldif:/import/ldif:ro
+      # Optional: TLS certificates
+      # - ./certs:/import/certs:ro
+    
+    # Security context for non-root execution
+    user: "1001:1001"
+    
+    # Health check
+    healthcheck:
+      test: ["CMD-SHELL", "ldapsearch -x -H ldapi:/// -b '' -s base '(objectclass=*)' namingContexts || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    restart: unless-stopped
+    
+    networks:
+      - ldap_network
+
+volumes:
+  ldap_data:
+    driver: local
+  ldap_config:
+    driver: local
+
+networks:
+  ldap_network:
+    driver: bridge

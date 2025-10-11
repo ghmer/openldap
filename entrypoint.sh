@@ -1,0 +1,629 @@
+#!/bin/bash
+set -e  # Exit on error
+
+# ============================================================================
+# OpenLDAP Docker Entrypoint Script
+# ============================================================================
+# This script handles first-run initialization and normal starts for OpenLDAP
+# running as non-privileged user (ldapprivless, UID 1001)
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# Error Handling Functions
+# ----------------------------------------------------------------------------
+
+fatal_error() {
+    echo "FATAL ERROR: $1" >&2
+    exit 1
+}
+
+warn() {
+    echo "WARNING: $1" >&2
+}
+
+log() {
+    echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $1"
+}
+
+require_readable_file() {
+    local path="$1"
+
+    if [ ! -f "$path" ]; then
+        fatal_error "Required file not found: $path"
+    fi
+
+    if [ ! -r "$path" ]; then
+        fatal_error "Required file not readable by $(id -u):$(id -g): $path"
+    fi
+}
+
+require_writable_dir() {
+    local path="$1"
+
+    if [ ! -d "$path" ]; then
+        fatal_error "Required directory not found: $path"
+    fi
+
+    if [ ! -w "$path" ] || [ ! -x "$path" ]; then
+        fatal_error "Required directory not writable/executable by $(id -u):$(id -g): $path"
+    fi
+}
+
+verify_runtime_paths() {
+    log "Verifying runtime directory permissions..."
+
+    require_writable_dir "/etc/ldap/slapd.d"
+    require_writable_dir "/var/lib/ldap"
+    require_writable_dir "/var/run/slapd"
+
+    if [ "$LDAP_ENABLE_TLS" = "true" ]; then
+        require_readable_file "$LDAP_TLS_CERT_FILE"
+        require_readable_file "$LDAP_TLS_KEY_FILE"
+
+        if [ -n "$LDAP_TLS_CA_FILE" ]; then
+            require_readable_file "$LDAP_TLS_CA_FILE"
+        fi
+    fi
+
+    log "Runtime directory permissions verified"
+}
+
+has_existing_ldap_data() {
+    if find /var/lib/ldap -mindepth 1 -print -quit 2>/dev/null | grep -q .; then
+        return 0
+    fi
+
+    return 1
+}
+
+
+# ----------------------------------------------------------------------------
+# Environment Variables Setup
+# ----------------------------------------------------------------------------
+
+# Set defaults for optional variables
+LDAP_PORT="${LDAP_PORT:-1389}"
+LDAPS_PORT="${LDAPS_PORT:-1636}"
+LDAP_SCHEMA_DIRECTORY="${LDAP_SCHEMA_DIRECTORY:-/import/schema}"
+LDAP_LDIF_DATA_DIRECTORY="${LDAP_LDIF_DATA_DIRECTORY:-/import/ldif}"
+LDAP_ENABLE_TLS="${LDAP_ENABLE_TLS:-false}"
+LDAP_TLS_VERIFY_CLIENT="${LDAP_TLS_VERIFY_CLIENT:-try}"
+LDAP_ALLOW_ANON_BINDING="${LDAP_ALLOW_ANON_BINDING:-true}"
+
+# ----------------------------------------------------------------------------
+# Validation Functions
+# ----------------------------------------------------------------------------
+
+validate_environment() {
+    log "Validating environment variables..."
+    local errors=0
+    
+    # Check required variables
+    if [ -z "$LDAP_BASE_DN" ]; then
+        echo "ERROR: LDAP_BASE_DN not set" >&2
+        errors=$((errors+1))
+    fi
+    
+    if [ -z "$LDAP_ADMIN_USER" ]; then
+        echo "ERROR: LDAP_ADMIN_USER not set" >&2
+        errors=$((errors+1))
+    fi
+    
+    if [ -z "$LDAP_ADMIN_PW" ]; then
+        echo "ERROR: LDAP_ADMIN_PW not set" >&2
+        errors=$((errors+1))
+    fi
+    
+    if [ -z "$LDAP_CONFIG_ADMIN_PW" ]; then
+        echo "ERROR: LDAP_CONFIG_ADMIN_PW not set" >&2
+        errors=$((errors+1))
+    fi
+    
+    # Validate DN format
+    if [ -n "$LDAP_BASE_DN" ]; then
+        echo "$LDAP_BASE_DN" | grep -qE '^(dc|o|ou)=[^,]+(,(dc|o|ou)=[^,]+)*$' || {
+            echo "ERROR: LDAP_BASE_DN format invalid (must be like dc=example,dc=com)" >&2
+            errors=$((errors+1))
+        }
+    fi
+    
+    # Validate RDN format
+    if [ -n "$LDAP_ADMIN_USER" ]; then
+        echo "$LDAP_ADMIN_USER" | grep -qE '^(cn|uid)=[^,]+$' || {
+            echo "ERROR: LDAP_ADMIN_USER format invalid (must be like cn=admin)" >&2
+            errors=$((errors+1))
+        }
+    fi
+    
+    # Validate TLS configuration if enabled
+    if [ "$LDAP_ENABLE_TLS" = "true" ]; then
+        if [ -z "$LDAP_TLS_CERT_FILE" ]; then
+            echo "ERROR: LDAP_TLS_CERT_FILE required when TLS enabled" >&2
+            errors=$((errors+1))
+        fi
+        
+        if [ -z "$LDAP_TLS_KEY_FILE" ]; then
+            echo "ERROR: LDAP_TLS_KEY_FILE required when TLS enabled" >&2
+            errors=$((errors+1))
+        fi
+        
+        # Verify files exist and are readable
+        if [ -n "$LDAP_TLS_CERT_FILE" ]; then
+            if [ ! -f "$LDAP_TLS_CERT_FILE" ]; then
+                echo "ERROR: TLS cert file not found: $LDAP_TLS_CERT_FILE" >&2
+                errors=$((errors+1))
+            elif [ ! -r "$LDAP_TLS_CERT_FILE" ]; then
+                echo "ERROR: TLS cert file not readable by current user: $LDAP_TLS_CERT_FILE" >&2
+                errors=$((errors+1))
+            fi
+        fi
+
+        if [ -n "$LDAP_TLS_KEY_FILE" ]; then
+            if [ ! -f "$LDAP_TLS_KEY_FILE" ]; then
+                echo "ERROR: TLS key file not found: $LDAP_TLS_KEY_FILE" >&2
+                errors=$((errors+1))
+            elif [ ! -r "$LDAP_TLS_KEY_FILE" ]; then
+                echo "ERROR: TLS key file not readable by current user: $LDAP_TLS_KEY_FILE" >&2
+                errors=$((errors+1))
+            fi
+        fi
+
+        if [ -n "$LDAP_TLS_CA_FILE" ]; then
+            if [ ! -f "$LDAP_TLS_CA_FILE" ]; then
+                echo "ERROR: TLS CA file not found: $LDAP_TLS_CA_FILE" >&2
+                errors=$((errors+1))
+            elif [ ! -r "$LDAP_TLS_CA_FILE" ]; then
+                echo "ERROR: TLS CA file not readable by current user: $LDAP_TLS_CA_FILE" >&2
+                errors=$((errors+1))
+            fi
+        fi
+        
+        # Validate TLS verify client value
+        case "$LDAP_TLS_VERIFY_CLIENT" in
+            never|allow|try|demand) ;;
+            *) 
+                echo "ERROR: LDAP_TLS_VERIFY_CLIENT must be: never, allow, try, or demand" >&2
+                errors=$((errors+1))
+                ;;
+        esac
+    fi
+    
+    # Validate anonymous binding value
+    case "$LDAP_ALLOW_ANON_BINDING" in
+        true|false|"") ;;
+        *) 
+            echo "ERROR: LDAP_ALLOW_ANON_BINDING must be true or false" >&2
+            errors=$((errors+1))
+            ;;
+    esac
+    
+    if [ $errors -gt 0 ]; then
+        fatal_error "Environment validation failed with $errors error(s)"
+    fi
+    
+    log "Environment validation successful"
+}
+
+# ----------------------------------------------------------------------------
+# Database Initialization Functions
+# ----------------------------------------------------------------------------
+
+clean_database() {
+    log "Cleaning database directory..."
+    rm -rf /var/lib/ldap/*
+    
+    # Verify cleanup
+    if [ "$(ls -A /var/lib/ldap 2>/dev/null)" ]; then
+        fatal_error "Failed to clean database directory"
+    fi
+    
+    log "Database directory cleaned"
+}
+
+initialize_config() {
+    log "Initializing config database..."
+    
+    # Check if config exists
+    if [ ! -f "/etc/ldap/slapd.d/cn=config.ldif" ]; then
+        # Try to generate from slapd.conf if available
+        if [ -f "/etc/ldap/slapd.conf" ]; then
+            if ! slaptest -f /etc/ldap/slapd.conf -F /etc/ldap/slapd.d 2>/dev/null; then
+                warn "Could not generate config from slapd.conf, will create minimal config"
+            else
+                log "Generated cn=config tree from slapd.conf"
+            fi
+        else
+            warn "/etc/ldap/slapd.conf not found, will create minimal config"
+        fi
+    fi
+    
+    log "Config database initialized"
+}
+
+ensure_config_structure() {
+    log "Ensuring cn=config base structure exists..."
+
+    local config_root="/etc/ldap/slapd.d/cn=config.ldif"
+    local config_dir="/etc/ldap/slapd.d/cn=config"
+
+    if [ ! -d "$config_dir" ]; then
+        mkdir -p "$config_dir"
+    fi
+
+    if [ ! -f "$config_root" ]; then
+        cat > /tmp/config_root.ldif <<EOF
+dn: cn=config
+objectClass: olcSchemaConfig
+objectClass: olcGlobal
+cn: config
+EOF
+        if ! slapadd -F /etc/ldap/slapd.d -n 0 -l /tmp/config_root.ldif; then
+            fatal_error "Failed to create cn=config root entry"
+        fi
+        rm -f /tmp/config_root.ldif
+        log "Created cn=config root entry"
+    fi
+
+    if [ ! -f "${config_dir}/olcDatabase={-1}frontend.ldif" ]; then
+        cat > /tmp/frontend.ldif <<EOF
+dn: olcDatabase={-1}frontend,cn=config
+objectClass: olcDatabaseConfig
+objectClass: olcFrontendConfig
+olcDatabase: {-1}frontend
+olcAccess: {0}to * by * read
+EOF
+        if ! slapadd -F /etc/ldap/slapd.d -n 0 -l /tmp/frontend.ldif; then
+            fatal_error "Failed to create frontend database entry"
+        fi
+        rm -f /tmp/frontend.ldif
+        log "Created frontend database entry"
+    fi
+
+    if [ ! -f "${config_dir}/olcDatabase={0}config.ldif" ]; then
+        cat > /tmp/configdb.ldif <<EOF
+dn: olcDatabase={0}config,cn=config
+objectClass: olcDatabaseConfig
+objectClass: olcConfigDatabase
+olcDatabase: {0}config
+olcRootDN: cn=config
+olcAccess: {0}to * by * none
+EOF
+        if ! slapadd -F /etc/ldap/slapd.d -n 0 -l /tmp/configdb.ldif; then
+            fatal_error "Failed to create config database entry"
+        fi
+        rm -f /tmp/configdb.ldif
+        log "Created config database entry"
+    fi
+
+    log "cn=config base structure verified"
+}
+
+set_config_password() {
+    log "Setting config admin password..."
+    
+    # Generate password hash
+    local HASH=$(slappasswd -s "$LDAP_CONFIG_ADMIN_PW")
+    
+    # Create LDIF for password change
+    cat > /tmp/config_pw.ldif <<EOF
+dn: olcDatabase={0}config,cn=config
+changetype: modify
+replace: olcRootPW
+olcRootPW: $HASH
+EOF
+    
+    # Apply via offline mode
+    slapmodify -F /etc/ldap/slapd.d -n 0 -l /tmp/config_pw.ldif || \
+        fatal_error "Failed to set config admin password"
+    
+    rm -f /tmp/config_pw.ldif
+    log "Config admin password set"
+}
+
+create_database() {
+    log "Creating database for $LDAP_BASE_DN..."
+
+    local config_dir="/etc/ldap/slapd.d/cn=config"
+    local target="${config_dir}/olcDatabase={1}mdb.ldif"
+
+    if [ -f "$target" ]; then
+        log "Updating existing database config entry"
+        cat > /tmp/database_modify.ldif <<EOF
+dn: olcDatabase={1}mdb,cn=config
+changetype: modify
+replace: olcDbDirectory
+olcDbDirectory: /var/lib/ldap
+-
+replace: olcSuffix
+olcSuffix: $LDAP_BASE_DN
+-
+replace: olcRootDN
+olcRootDN: ${LDAP_ADMIN_USER},${LDAP_BASE_DN}
+-
+replace: olcDbIndex
+olcDbIndex: objectClass eq
+olcDbIndex: cn,uid eq
+olcDbIndex: uidNumber,gidNumber eq
+olcDbIndex: member,memberUid eq
+-
+replace: olcAccess
+olcAccess: {0}to attrs=userPassword,shadowLastChange by self write by anonymous auth by * none
+olcAccess: {1}to dn.base="" by * read
+olcAccess: {2}to * by self write by * read
+EOF
+
+        if ! slapmodify -F /etc/ldap/slapd.d -n 0 -l /tmp/database_modify.ldif; then
+            fatal_error "Failed to update existing database entry"
+        fi
+
+        rm -f /tmp/database_modify.ldif
+        log "Database entry updated"
+        return 0
+    fi
+
+    log "Creating new database config entry"
+    cat > /tmp/database.ldif <<EOF
+dn: olcDatabase={1}mdb,cn=config
+objectClass: olcDatabaseConfig
+objectClass: olcMdbConfig
+olcDatabase: {1}mdb
+olcDbDirectory: /var/lib/ldap
+olcSuffix: $LDAP_BASE_DN
+olcRootDN: ${LDAP_ADMIN_USER},${LDAP_BASE_DN}
+olcDbIndex: objectClass eq
+olcDbIndex: cn,uid eq
+olcDbIndex: uidNumber,gidNumber eq
+olcDbIndex: member,memberUid eq
+olcAccess: {0}to attrs=userPassword,shadowLastChange by self write by anonymous auth by * none
+olcAccess: {1}to dn.base="" by * read
+olcAccess: {2}to * by self write by * read
+EOF
+
+    if ! slapadd -F /etc/ldap/slapd.d -n 0 -l /tmp/database.ldif; then
+        fatal_error "Failed to create database"
+    fi
+
+    rm -f /tmp/database.ldif
+    log "Database created"
+}
+
+set_admin_password() {
+    log "Setting admin password..."
+    
+    local HASH=$(slappasswd -s "$LDAP_ADMIN_PW")
+    
+    cat > /tmp/admin_pw.ldif <<EOF
+dn: olcDatabase={1}mdb,cn=config
+changetype: modify
+replace: olcRootPW
+olcRootPW: $HASH
+EOF
+    
+    slapmodify -F /etc/ldap/slapd.d -n 0 -l /tmp/admin_pw.ldif || \
+        fatal_error "Failed to set admin password"
+    
+    rm -f /tmp/admin_pw.ldif
+    log "Admin password set"
+}
+
+create_base_entry() {
+    log "Creating base DN entry..."
+    
+    # Extract DC components
+    local DC_PARTS=$(echo "$LDAP_BASE_DN" | sed 's/dc=//g' | sed 's/,/ /g')
+    local FIRST_DC=$(echo "$DC_PARTS" | awk '{print $1}')
+    local ORG_NAME=$(echo "$DC_PARTS" | sed 's/ /./g')
+    
+    cat > /tmp/base.ldif <<EOF
+dn: $LDAP_BASE_DN
+objectClass: top
+objectClass: dcObject
+objectClass: organization
+dc: $FIRST_DC
+o: $ORG_NAME
+EOF
+    
+    slapadd -b "$LDAP_BASE_DN" -l /tmp/base.ldif -F /etc/ldap/slapd.d || \
+        fatal_error "Failed to create base DN entry"
+    
+    rm -f /tmp/base.ldif
+    log "Base DN entry created"
+}
+
+# ----------------------------------------------------------------------------
+# TLS Configuration
+# ----------------------------------------------------------------------------
+
+configure_tls() {
+    if [ "$LDAP_ENABLE_TLS" != "true" ]; then
+        log "TLS disabled, skipping TLS configuration"
+        return 0
+    fi
+
+    log "Configuring TLS/SSL..."
+
+    cat > /tmp/tls_config.ldif <<EOF
+dn: cn=config
+changetype: modify
+replace: olcTLSCertificateFile
+olcTLSCertificateFile: $LDAP_TLS_CERT_FILE
+-
+replace: olcTLSCertificateKeyFile
+olcTLSCertificateKeyFile: $LDAP_TLS_KEY_FILE
+EOF
+
+    if [ -n "$LDAP_TLS_CA_FILE" ]; then
+        cat >> /tmp/tls_config.ldif <<EOF
+-
+replace: olcTLSCACertificateFile
+olcTLSCACertificateFile: $LDAP_TLS_CA_FILE
+EOF
+    fi
+
+    cat >> /tmp/tls_config.ldif <<EOF
+-
+replace: olcTLSVerifyClient
+olcTLSVerifyClient: ${LDAP_TLS_VERIFY_CLIENT}
+EOF
+
+    slapmodify -F /etc/ldap/slapd.d -n 0 -l /tmp/tls_config.ldif || {
+        rm -f /tmp/tls_config.ldif
+        fatal_error "Failed to configure TLS"
+    }
+
+    rm -f /tmp/tls_config.ldif
+    log "TLS configuration complete"
+}
+
+# ----------------------------------------------------------------------------
+# Anonymous Binding Configuration
+# ----------------------------------------------------------------------------
+
+configure_anonymous_binding() {
+    if [ "$LDAP_ALLOW_ANON_BINDING" != "false" ]; then
+        log "Anonymous binding enabled (default)"
+        return 0
+    fi
+    
+    log "Disabling anonymous binding..."
+    
+    # Create LDIF to modify access rules
+    cat > /tmp/disable_anon.ldif <<EOF
+dn: olcDatabase={1}mdb,cn=config
+changetype: modify
+replace: olcAccess
+olcAccess: {0}to attrs=userPassword,shadowLastChange by self write by anonymous auth by * none
+olcAccess: {1}to dn.base="" by * read
+olcAccess: {2}to * by self write by users read by * none
+EOF
+
+    slapmodify -F /etc/ldap/slapd.d -n 0 -l /tmp/disable_anon.ldif || {
+        rm -f /tmp/disable_anon.ldif
+        warn "Failed to disable anonymous binding, continuing with defaults"
+    }
+    
+    rm -f /tmp/disable_anon.ldif
+    log "Anonymous binding disabled"
+}
+
+# ----------------------------------------------------------------------------
+# Schema and Data Loading
+# ----------------------------------------------------------------------------
+
+load_schemas() {
+    log "Loading custom schemas..."
+    
+    if [ -d "$LDAP_SCHEMA_DIRECTORY" ]; then
+        # Load schemas in alphabetical order
+        for schema in "$LDAP_SCHEMA_DIRECTORY"/*.ldif; do
+            [ -f "$schema" ] || continue
+            
+            log "Loading schema: $(basename $schema)"
+            slapadd -F /etc/ldap/slapd.d -n 0 -l "$schema" || {
+                warn "Failed to load schema $schema, continuing..."
+            }
+        done
+    else
+        log "No custom schema directory found at $LDAP_SCHEMA_DIRECTORY"
+    fi
+}
+
+import_ldif_files() {
+    log "Importing LDIF files..."
+    
+    if [ -d "$LDAP_LDIF_DATA_DIRECTORY" ] && [ "$(ls -A $LDAP_LDIF_DATA_DIRECTORY/*.ldif 2>/dev/null)" ]; then
+        # Import files in alphabetical order using offline tool
+        for ldif in "$LDAP_LDIF_DATA_DIRECTORY"/*.ldif; do
+            [ -f "$ldif" ] || continue
+            
+            log "Importing: $(basename $ldif)"
+            slapadd -b "$LDAP_BASE_DN" -l "$ldif" -F /etc/ldap/slapd.d || {
+                warn "Failed to import $ldif, continuing..."
+            }
+        done
+    else
+        log "No LDIF files found in $LDAP_LDIF_DATA_DIRECTORY"
+    fi
+}
+
+# ----------------------------------------------------------------------------
+# Marker File Management
+# ----------------------------------------------------------------------------
+
+
+# ----------------------------------------------------------------------------
+# Normal Start Function
+# ----------------------------------------------------------------------------
+
+normal_start() {
+    log "Starting slapd (already initialized)..."
+    
+    # Verify critical files exist
+    if [ ! -f "/etc/ldap/slapd.d/cn=config.ldif" ]; then
+        fatal_error "Config database missing"
+    fi
+    
+    if [ ! -d "/var/lib/ldap" ]; then
+        fatal_error "Database directory missing"
+    fi
+    
+    # Build service URLs based on TLS configuration
+    local SERVICES="ldapi:/// ldap://:${LDAP_PORT}/"
+    
+    if [ "$LDAP_ENABLE_TLS" = "true" ]; then
+        SERVICES="${SERVICES} ldaps://:${LDAPS_PORT}/"
+    fi
+    
+    log "Starting slapd with services: $SERVICES"
+    
+    # Start slapd in foreground
+    exec /usr/sbin/slapd \
+        -u ldapprivless \
+        -g ldapprivless \
+        -h "$SERVICES" \
+        -F /etc/ldap/slapd.d \
+        -d 256
+}
+
+# ----------------------------------------------------------------------------
+# First Run Initialization
+# ----------------------------------------------------------------------------
+
+first_run_initialization() {
+    log "=== First Run Initialization ==="
+    
+    clean_database
+    initialize_config
+    ensure_config_structure
+    set_config_password
+    create_database
+    set_admin_password
+    create_base_entry
+    configure_tls
+    configure_anonymous_binding
+    load_schemas
+    import_ldif_files
+    log "=== Initialization Complete ==="
+}
+
+# ============================================================================
+# Main Execution
+# ============================================================================
+
+log "OpenLDAP Docker Entrypoint Starting..."
+
+# Validate environment
+validate_environment
+
+# Verify runtime permissions before proceeding
+verify_runtime_paths
+
+# Check initialization state
+if has_existing_ldap_data; then
+    log "Existing LDAP configuration/data detected, starting without initialization"
+    normal_start
+else
+    log "No LDAP configuration/data detected, performing first-run initialization"
+    first_run_initialization
+    normal_start
+fi
