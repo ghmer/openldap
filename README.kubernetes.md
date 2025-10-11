@@ -2,6 +2,10 @@
 
 This guide provides instructions for deploying OpenLDAP in Kubernetes, including TLS/certificate management options.
 
+**Maintainer:** Mario Enrico Ragucci (ghmer) - [openldap@r5i.xyz](mailto:openldap@r5i.xyz)
+**Repository:** [https://github.com/ghmer/openldap-container](https://github.com/ghmer/openldap-container)
+**License:** MIT
+
 **⚠️ AI GENERATED - VIEWER DISCRETION IS ADVISED ⚠️**
 
 ## Table of Contents

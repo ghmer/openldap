@@ -6,6 +6,10 @@ set -e  # Exit on error
 # ============================================================================
 # This script handles first-run initialization and normal starts for OpenLDAP
 # running as non-privileged user (ldapprivless, UID 1001)
+#
+# Maintainer: Mario Enrico Ragucci (ghmer) <openldap@r5i.xyz>
+# Repository: https://github.com/ghmer/openldap-container
+# License: MIT
 # ============================================================================
 
 # ----------------------------------------------------------------------------

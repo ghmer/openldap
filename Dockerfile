@@ -1,5 +1,12 @@
 FROM debian:trixie-slim
 
+# Maintainer information
+LABEL maintainer="Mario Enrico Ragucci <openldap@r5i.xyz>"
+LABEL org.opencontainers.image.authors="Mario Enrico Ragucci (ghmer)"
+LABEL org.opencontainers.image.source="https://github.com/ghmer/openldap-container"
+LABEL org.opencontainers.image.description="OpenLDAP container image - A privately-maintained alternative to deprecated Bitnami images"
+LABEL org.opencontainers.image.licenses="MIT"
+
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
 
@@ -22,7 +29,7 @@ RUN echo 'slapd slapd/move_old_database boolean true' | debconf-set-selections
 RUN echo 'slapd slapd/no_configuration boolean false' | debconf-set-selections
 
 # install slapd
-RUN apt update && apt full-upgrade -y && DEBIAN_FRONTEND=noninteractive apt-get -y install slapd ldap-utils
+RUN DEBIAN_FRONTEND=noninteractive apt update && DEBIAN_FRONTEND=noninteractive apt full-upgrade -y && DEBIAN_FRONTEND=noninteractive apt-get -y install slapd ldap-utils
 
 # Create a non-root user
 RUN addgroup --quiet --gid ${groupid} ${groupname} && \

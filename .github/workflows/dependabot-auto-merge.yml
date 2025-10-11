@@ -1,3 +1,8 @@
+# Dependabot Auto-Merge Workflow
+# Maintainer: Mario Enrico Ragucci (ghmer) <openldap@r5i.xyz>
+# Repository: https://github.com/ghmer/openldap-container
+# License: MIT
+
 name: Dependabot Auto-Merge
 
 on:

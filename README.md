@@ -2,6 +2,10 @@
 
 A privately-maintained OpenLDAP container image built to address the gap left by the deprecation of Bitnami's OpenLDAP images.
 
+**Maintainer:** Mario Enrico Ragucci (ghmer) - [openldap@r5i.xyz](mailto:openldap@r5i.xyz)
+**Repository:** [https://github.com/ghmer/openldap-container](https://github.com/ghmer/openldap-container)
+**License:** MIT
+
 **⚠️ WORK IN PROGRESS - NOT PRODUCTION READY**
 
 This image is under development and lacks comprehensive reviews. Some functionality is still missing. Use at your own risk.
@@ -122,51 +126,6 @@ volumes:
   ldap_config:
 ```
 
-### With phpLDAPadmin (Web UI)
-
-```yaml
-services:
-  openldap:
-    image: garthako/openldap:latest
-    container_name: openldap
-    environment:
-      LDAP_BASE_DN: "dc=example,dc=com"
-      LDAP_ADMIN_USER: "cn=admin"
-      LDAP_ADMIN_PW: "admin_password"
-      LDAP_CONFIG_ADMIN_PW: "config_password"
-    ports:
-      - "1389:1389"
-    volumes:
-      - ldap_data:/var/lib/ldap
-      - ldap_config:/etc/ldap/slapd.d
-    user: "1001:1001"
-    restart: unless-stopped
-    networks:
-      - ldap_network
-
-  phpldapadmin:
-    image: osixia/phpldapadmin:latest
-    container_name: phpldapadmin
-    environment:
-      PHPLDAPADMIN_LDAP_HOSTS: "openldap"
-      PHPLDAPADMIN_HTTPS: "false"
-    ports:
-      - "8080:80"
-    depends_on:
-      - openldap
-    restart: unless-stopped
-    networks:
-      - ldap_network
-
-volumes:
-  ldap_data:
-  ldap_config:
-
-networks:
-  ldap_network:
-    driver: bridge
-```
-
 ## Volumes
 
 | Path | Purpose |
@@ -231,6 +190,8 @@ docker run -d \
 docker exec bitnami-openldap slapcat -b "dc=example,dc=com" > backup.ldif
 ```
 
+Get rid of the baseDN entry.
+
 2. Start new container with same base DN
 
 3. Import data:
@@ -273,6 +234,11 @@ For Kubernetes deployment examples, including TLS configuration with cert-manage
 ## Support
 
 This is a private project without commercial support. Report issues on GitHub.
+
+**Maintainer Contact:**
+- GitHub: [@ghmer](https://github.com/ghmer)
+- Email: openldap@r5i.xyz
+- Repository: [https://github.com/ghmer/openldap-container](https://github.com/ghmer/openldap-container)
 
 ### We Need Your Help! 🙋
 

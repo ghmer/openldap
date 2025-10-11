@@ -1,3 +1,8 @@
+# Build and Push Docker Image Workflow
+# Maintainer: Mario Enrico Ragucci (ghmer) <openldap@r5i.xyz>
+# Repository: https://github.com/ghmer/openldap-container
+# License: MIT
+
 name: Build and Push Docker Image
 
 on:

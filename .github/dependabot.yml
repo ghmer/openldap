@@ -1,4 +1,8 @@
 # Dependabot configuration for monitoring Docker base image updates
+# Maintainer: Mario Enrico Ragucci (ghmer) <openldap@r5i.xyz>
+# Repository: https://github.com/ghmer/openldap-container
+# License: MIT
+
 version: 2
 updates:
   # Monitor Dockerfile for base image updates
