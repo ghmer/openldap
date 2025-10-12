@@ -304,6 +304,41 @@ create_database() {
     local config_dir="/etc/ldap/slapd.d/cn=config"
     local target="${config_dir}/olcDatabase={1}mdb.ldif"
 
+    if [ -f "$target" ]; then
+        log "Updating existing database config entry"
+        cat > /tmp/database_modify.ldif <<EOF
+dn: olcDatabase={1}mdb,cn=config
+changetype: modify
+replace: olcDbDirectory
+olcDbDirectory: /var/lib/ldap
+-
+replace: olcSuffix
+olcSuffix: $LDAP_BASE_DN
+-
+replace: olcRootDN
+olcRootDN: ${LDAP_ADMIN_USER},${LDAP_BASE_DN}
+-
+replace: olcDbIndex
+olcDbIndex: objectClass eq
+olcDbIndex: cn,uid eq
+olcDbIndex: uidNumber,gidNumber eq
+olcDbIndex: member,memberUid eq
+-
+replace: olcAccess
+olcAccess: {0}to attrs=userPassword,shadowLastChange by self write by anonymous auth by * none
+olcAccess: {1}to dn.base="" by * read
+olcAccess: {2}to * by self write by * none
+EOF
+
+        if ! slapmodify -F /etc/ldap/slapd.d -n 0 -l /tmp/database_modify.ldif; then
+            fatal_error "Failed to update existing database entry"
+        fi
+
+        rm -f /tmp/database_modify.ldif
+        log "Database entry updated"
+        return 0
+    fi
+
     log "Creating new database config entry"
     cat > /tmp/database.ldif <<EOF
 dn: olcDatabase={1}mdb,cn=config
