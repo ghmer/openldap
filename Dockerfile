@@ -4,7 +4,7 @@ FROM debian:trixie-slim
 LABEL maintainer="Mario Enrico Ragucci <openldap@r5i.xyz>"
 LABEL org.opencontainers.image.authors="Mario Enrico Ragucci (ghmer)"
 LABEL org.opencontainers.image.source="https://github.com/ghmer/openldap-container"
-LABEL org.opencontainers.image.description="OpenLDAP container image - A privately-maintained alternative to deprecated Bitnami images"
+LABEL org.opencontainers.image.description="OpenLDAP container image"
 LABEL org.opencontainers.image.licenses="MIT"
 
 ARG TARGETPLATFORM

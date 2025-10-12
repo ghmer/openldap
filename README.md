@@ -1,6 +1,6 @@
 # OpenLDAP Container Image
 
-A privately-maintained OpenLDAP container image built to address the gap left by the deprecation of Bitnami's OpenLDAP images.
+A privately-maintained OpenLDAP container image.
 
 **Maintainer:** Mario Enrico Ragucci (ghmer) - [openldap@r5i.xyz](mailto:openldap@r5i.xyz)
 **Repository:** [https://github.com/ghmer/openldap-container](https://github.com/ghmer/openldap-container)
@@ -8,7 +8,9 @@ A privately-maintained OpenLDAP container image built to address the gap left by
 
 **⚠️ WORK IN PROGRESS - NOT PRODUCTION READY**
 
-This image is under development and lacks comprehensive reviews. Some functionality is still missing. Use at your own risk.
+This image is under development and definitely lacks reviews. Some functionality is still missing. Use at your own risk.
+
+Its aim is to provide a container image that is kept up to date. It can be found in dockerhub: [garthako/openldap:latest](https://hub.docker.com/r/garthako/openldap)
 
 ## Quick Start
 
@@ -51,13 +53,13 @@ ldapsearch -x -H ldap://localhost:1389 -b "dc=example,dc=com" \
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `LDAP_ALLOW_ANON_BINDING` | `true` | Allow anonymous binds |
+| `LDAP_ALLOW_ANON_BINDING` | `false` | Allow anonymous binds |
 | `LDAP_ENABLE_TLS` | `false` | Enable LDAPS |
-| `LDAP_TLS_CERT_FILE` | - | Path to TLS cert |
-| `LDAP_TLS_KEY_FILE` | - | Path to TLS key |
-| `LDAP_TLS_CA_FILE` | - | Path to CA cert |
+| `LDAP_TLS_CERT_FILE` | - | Path to TLS cert - required if `LDAP_ENABLE_TLS` is true |
+| `LDAP_TLS_KEY_FILE` | - | Path to TLS key - required if `LDAP_ENABLE_TLS` is true |
+| `LDAP_TLS_CA_FILE` | - | Path to CA cert - required if `LDAP_ENABLE_TLS` is true |
+| `LDAPS_PORT` | `1636` | LDAPS port - required if `LDAP_ENABLE_TLS` is true |
 | `LDAP_PORT` | `1389` | LDAP port |
-| `LDAPS_PORT` | `1636` | LDAPS port |
 
 ## Docker Compose
 
@@ -79,6 +81,8 @@ services:
       - ldap_data:/var/lib/ldap
       - ldap_config:/etc/ldap/slapd.d
     user: "1001:1001"
+    ulimits:
+      nofile: 1024
     restart: unless-stopped
 
 volumes:
@@ -113,6 +117,8 @@ services:
       - ./schema:/import/schema:ro
       - ./certs:/import/certs:ro
     user: "1001:1001"
+    ulimits:
+      nofile: 1024
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "ldapsearch", "-x", "-H", "ldap://localhost:1389", "-b", "dc=example,dc=com", "-LLL"]
@@ -164,48 +170,24 @@ docker run -d \
   # ... other config
 ```
 
-## Migration from Bitnami
-
-### Variable Mapping
-
-| Bitnami | This Image |
-|---------|------------|
-| `LDAP_ROOT` | `LDAP_BASE_DN` |
-| `LDAP_ADMIN_USERNAME` | `LDAP_ADMIN_USER` (must include RDN like `cn=admin`) |
-| `LDAP_ADMIN_PASSWORD` | `LDAP_ADMIN_PW` |
-| `LDAP_CONFIG_ADMIN_PASSWORD` | `LDAP_CONFIG_ADMIN_PW` |
-| `LDAP_PORT_NUMBER` | `LDAP_PORT` (default 1389 vs 389) |
-
-### Volume Paths
-
-| Bitnami | This Image |
-|---------|------------|
-| `/bitnami/openldap/data` | `/var/lib/ldap` |
-| `/bitnami/openldap/slapd.d` | `/etc/ldap/slapd.d` |
-
 ### Migration Steps
 
-1. Backup from Bitnami:
-```bash
-docker exec bitnami-openldap slapcat -b "dc=example,dc=com" > backup.ldif
-```
+1. Backup from existing server:
 
-Get rid of the baseDN entry.
+- Get an ldif export of your data. Exported operational attributes will be imported, too.
+- Get rid of the baseDN entry.
+- Place the exported file into a folder `import-ldif`
+- Place any schema extensions into a folder `import-schema`
 
-2. Start new container with same base DN
+2. Configure your container with same base DN
 
-3. Import data:
-```bash
-docker exec -i openldap ldapadd -x -D "cn=admin,dc=example,dc=com" \
-  -w admin_password < backup.ldif
-```
+- Mount folders into place:
+  - ./import-schema:/import/schema:ro
+  - ./import-ldif:/import/ldif:ro
 
-## Known Limitations
+3. Start the container
 
-- No automatic replication setup
-- Fixed UID/GID (1001)
-- No built-in monitoring/metrics
-- Manual schema configuration required
+Watch for log entries. 
 
 ## Troubleshooting
 
@@ -224,12 +206,6 @@ chmod 600 server.key
 ```bash
 docker logs openldap
 ```
-
-## Kubernetes Deployment
-
-For Kubernetes deployment examples, including TLS configuration with cert-manager / Traefik with Let's Encrypt, see:
-
-**📘 [Kubernetes Deployment Guide](README.kubernetes.md)**
 
 ## Support
 
@@ -256,10 +232,10 @@ As this project is still in development, I am looking for community members to:
 
 1. Try the image in your development/testing environment
 2. Test different configurations (TLS, custom schemas, LDIF imports, etc.)
-3. Validate migration scenarios from Bitnami or other LDAP solutions
+3. Validate migration scenarios
 4. Document your findings and report issues on GitHub
 5. Share your use case and any missing features you identify
 
-Your testing and feedback are crucial to making this image production-ready. Every contribution, whether it's a bug report, documentation improvement, or feature suggestion, helps the entire community.
+Your testing and feedback are much appreciated. Every contribution, whether it's a bug report, documentation improvement, or feature suggestion, helps the entire community.
 
 **Get Started:** Pull the image, follow the Quick Start guide, and let us know how it works for you!
