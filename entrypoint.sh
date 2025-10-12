@@ -13,6 +13,28 @@ set -e  # Exit on error
 # ============================================================================
 
 # ----------------------------------------------------------------------------
+# Cleanup Handler
+# ----------------------------------------------------------------------------
+
+# Trap handler for unified temporary file cleanup
+cleanup_temp_files() {
+    rm -f /tmp/config_root.ldif
+    rm -f /tmp/frontend.ldif
+    rm -f /tmp/configdb.ldif
+    rm -f /tmp/config_pw.ldif
+    rm -f /tmp/database_modify.ldif
+    rm -f /tmp/database.ldif
+    rm -f /tmp/admin_pw.ldif
+    rm -f /tmp/base.ldif
+    rm -f /tmp/tls_config.ldif
+    rm -f /tmp/disable_anon.ldif
+    rm -f /tmp/enable_exop.ldif
+}
+
+# Set trap to cleanup on exit
+trap cleanup_temp_files EXIT
+
+# ----------------------------------------------------------------------------
 # Error Handling Functions
 # ----------------------------------------------------------------------------
 
@@ -100,8 +122,7 @@ LDAP_ALLOW_ANON_BINDING="${LDAP_ALLOW_ANON_BINDING:-true}"
 # Validation Functions
 # ----------------------------------------------------------------------------
 
-validate_environment() {
-    log "Validating environment variables..."
+validate_required_vars() {
     local errors=0
     
     # Check required variables
@@ -125,6 +146,12 @@ validate_environment() {
         errors=$((errors+1))
     fi
     
+    return $errors
+}
+
+validate_dn_formats() {
+    local errors=0
+    
     # Validate DN format
     if [ -n "$LDAP_BASE_DN" ]; then
         echo "$LDAP_BASE_DN" | grep -qE '^(dc|o|ou)=[^,]+(,(dc|o|ou)=[^,]+)*$' || {
@@ -141,6 +168,12 @@ validate_environment() {
         }
     fi
     
+    return $errors
+}
+
+validate_boolean_options() {
+    local errors=0
+    
     # Validate TLS configuration if enabled
     if [ "$LDAP_ENABLE_TLS" = "true" ]; then
         if [ -z "$LDAP_TLS_CERT_FILE" ]; then
@@ -153,36 +186,8 @@ validate_environment() {
             errors=$((errors+1))
         fi
         
-        # Verify files exist and are readable
-        if [ -n "$LDAP_TLS_CERT_FILE" ]; then
-            if [ ! -f "$LDAP_TLS_CERT_FILE" ]; then
-                echo "ERROR: TLS cert file not found: $LDAP_TLS_CERT_FILE" >&2
-                errors=$((errors+1))
-            elif [ ! -r "$LDAP_TLS_CERT_FILE" ]; then
-                echo "ERROR: TLS cert file not readable by current user: $LDAP_TLS_CERT_FILE" >&2
-                errors=$((errors+1))
-            fi
-        fi
-
-        if [ -n "$LDAP_TLS_KEY_FILE" ]; then
-            if [ ! -f "$LDAP_TLS_KEY_FILE" ]; then
-                echo "ERROR: TLS key file not found: $LDAP_TLS_KEY_FILE" >&2
-                errors=$((errors+1))
-            elif [ ! -r "$LDAP_TLS_KEY_FILE" ]; then
-                echo "ERROR: TLS key file not readable by current user: $LDAP_TLS_KEY_FILE" >&2
-                errors=$((errors+1))
-            fi
-        fi
-
-        if [ -n "$LDAP_TLS_CA_FILE" ]; then
-            if [ ! -f "$LDAP_TLS_CA_FILE" ]; then
-                echo "ERROR: TLS CA file not found: $LDAP_TLS_CA_FILE" >&2
-                errors=$((errors+1))
-            elif [ ! -r "$LDAP_TLS_CA_FILE" ]; then
-                echo "ERROR: TLS CA file not readable by current user: $LDAP_TLS_CA_FILE" >&2
-                errors=$((errors+1))
-            fi
-        fi
+        # Note: TLS file existence validation is handled by verify_runtime_paths()
+        # to avoid duplication. This was previously duplicated in lines 157-185.
         
         # Validate TLS verify client value
         case "$LDAP_TLS_VERIFY_CLIENT" in
@@ -202,6 +207,17 @@ validate_environment() {
             errors=$((errors+1))
             ;;
     esac
+    
+    return $errors
+}
+
+validate_environment() {
+    log "Validating environment variables..."
+    local errors=0
+    
+    validate_required_vars || errors=$((errors+$?))
+    validate_dn_formats || errors=$((errors+$?))
+    validate_boolean_options || errors=$((errors+$?))
     
     if [ $errors -gt 0 ]; then
         fatal_error "Environment validation failed with $errors error(s)"
@@ -226,11 +242,21 @@ clean_database() {
     log "Database directory cleaned"
 }
 
-initialize_config() {
+# Consolidated config initialization function
+# Merges the functionality of initialize_config() and ensure_config_structure()
+initialize_config_database() {
     log "Initializing config database..."
     
-    # Check if config exists
-    if [ ! -f "/etc/ldap/slapd.d/cn=config.ldif" ]; then
+    local config_root="/etc/ldap/slapd.d/cn=config.ldif"
+    local config_dir="/etc/ldap/slapd.d/cn=config"
+
+    # Ensure config directory exists
+    if [ ! -d "$config_dir" ]; then
+        mkdir -p "$config_dir"
+    fi
+
+    # Check if config root exists
+    if [ ! -f "$config_root" ]; then
         # First, try to copy from preserved default config
         if [ -d "/etc/ldap/slapd.d.default" ] && [ "$(ls -A /etc/ldap/slapd.d.default 2>/dev/null)" ]; then
             log "Copying default config from /etc/ldap/slapd.d.default..."
@@ -244,69 +270,11 @@ initialize_config() {
                 log "Generated cn=config tree from slapd.conf"
             fi
         else
-            warn "No default config or slapd.conf found, will create minimal config"
+            fatal_error "No default config or slapd.conf found."
         fi
     fi
     
     log "Config database initialized"
-}
-
-ensure_config_structure() {
-    log "Ensuring cn=config base structure exists..."
-
-    local config_root="/etc/ldap/slapd.d/cn=config.ldif"
-    local config_dir="/etc/ldap/slapd.d/cn=config"
-
-    if [ ! -d "$config_dir" ]; then
-        mkdir -p "$config_dir"
-    fi
-
-    if [ ! -f "$config_root" ]; then
-        cat > /tmp/config_root.ldif <<EOF
-dn: cn=config
-objectClass: olcSchemaConfig
-objectClass: olcGlobal
-cn: config
-EOF
-        if ! slapadd -F /etc/ldap/slapd.d -n 0 -l /tmp/config_root.ldif; then
-            fatal_error "Failed to create cn=config root entry"
-        fi
-        rm -f /tmp/config_root.ldif
-        log "Created cn=config root entry"
-    fi
-
-    if [ ! -f "${config_dir}/olcDatabase={-1}frontend.ldif" ]; then
-        cat > /tmp/frontend.ldif <<EOF
-dn: olcDatabase={-1}frontend,cn=config
-objectClass: olcDatabaseConfig
-objectClass: olcFrontendConfig
-olcDatabase: {-1}frontend
-olcAccess: {0}to * by * read
-EOF
-        if ! slapadd -F /etc/ldap/slapd.d -n 0 -l /tmp/frontend.ldif; then
-            fatal_error "Failed to create frontend database entry"
-        fi
-        rm -f /tmp/frontend.ldif
-        log "Created frontend database entry"
-    fi
-
-    if [ ! -f "${config_dir}/olcDatabase={0}config.ldif" ]; then
-        cat > /tmp/configdb.ldif <<EOF
-dn: olcDatabase={0}config,cn=config
-objectClass: olcDatabaseConfig
-objectClass: olcConfigDatabase
-olcDatabase: {0}config
-olcRootDN: cn=config
-olcAccess: {0}to * by * none
-EOF
-        if ! slapadd -F /etc/ldap/slapd.d -n 0 -l /tmp/configdb.ldif; then
-            fatal_error "Failed to create config database entry"
-        fi
-        rm -f /tmp/configdb.ldif
-        log "Created config database entry"
-    fi
-
-    log "cn=config base structure verified"
 }
 
 set_config_password() {
@@ -327,7 +295,6 @@ EOF
     slapmodify -F /etc/ldap/slapd.d -n 0 -l /tmp/config_pw.ldif || \
         fatal_error "Failed to set config admin password"
     
-    rm -f /tmp/config_pw.ldif
     log "Config admin password set"
 }
 
@@ -336,41 +303,6 @@ create_database() {
 
     local config_dir="/etc/ldap/slapd.d/cn=config"
     local target="${config_dir}/olcDatabase={1}mdb.ldif"
-
-    if [ -f "$target" ]; then
-        log "Updating existing database config entry"
-        cat > /tmp/database_modify.ldif <<EOF
-dn: olcDatabase={1}mdb,cn=config
-changetype: modify
-replace: olcDbDirectory
-olcDbDirectory: /var/lib/ldap
--
-replace: olcSuffix
-olcSuffix: $LDAP_BASE_DN
--
-replace: olcRootDN
-olcRootDN: ${LDAP_ADMIN_USER},${LDAP_BASE_DN}
--
-replace: olcDbIndex
-olcDbIndex: objectClass eq
-olcDbIndex: cn,uid eq
-olcDbIndex: uidNumber,gidNumber eq
-olcDbIndex: member,memberUid eq
--
-replace: olcAccess
-olcAccess: {0}to attrs=userPassword,shadowLastChange by self write by anonymous auth by * none
-olcAccess: {1}to dn.base="" by * read
-olcAccess: {2}to * by self write by * none
-EOF
-
-        if ! slapmodify -F /etc/ldap/slapd.d -n 0 -l /tmp/database_modify.ldif; then
-            fatal_error "Failed to update existing database entry"
-        fi
-
-        rm -f /tmp/database_modify.ldif
-        log "Database entry updated"
-        return 0
-    fi
 
     log "Creating new database config entry"
     cat > /tmp/database.ldif <<EOF
@@ -394,7 +326,6 @@ EOF
         fatal_error "Failed to create database"
     fi
 
-    rm -f /tmp/database.ldif
     log "Database created"
 }
 
@@ -413,7 +344,6 @@ EOF
     slapmodify -F /etc/ldap/slapd.d -n 0 -l /tmp/admin_pw.ldif || \
         fatal_error "Failed to set admin password"
     
-    rm -f /tmp/admin_pw.ldif
     log "Admin password set"
 }
 
@@ -437,7 +367,6 @@ EOF
     slapadd -b "$LDAP_BASE_DN" -l /tmp/base.ldif -F /etc/ldap/slapd.d || \
         fatal_error "Failed to create base DN entry"
     
-    rm -f /tmp/base.ldif
     log "Base DN entry created"
 }
 
@@ -478,11 +407,9 @@ olcTLSVerifyClient: ${LDAP_TLS_VERIFY_CLIENT}
 EOF
 
     slapmodify -F /etc/ldap/slapd.d -n 0 -l /tmp/tls_config.ldif || {
-        rm -f /tmp/tls_config.ldif
         fatal_error "Failed to configure TLS"
     }
 
-    rm -f /tmp/tls_config.ldif
     log "TLS configuration complete"
 }
 
@@ -509,11 +436,9 @@ olcAccess: {2}to * by self write by users read by * none
 EOF
 
     slapmodify -F /etc/ldap/slapd.d -n 0 -l /tmp/disable_anon.ldif || {
-        rm -f /tmp/disable_anon.ldif
         warn "Failed to disable anonymous binding, continuing with defaults"
     }
     
-    rm -f /tmp/disable_anon.ldif
     log "Anonymous binding disabled"
 }
 
@@ -540,7 +465,6 @@ EOF
 
     # Try to modify existing module entry first
     if slapmodify -F /etc/ldap/slapd.d -n 0 -l /tmp/enable_exop.ldif 2>/dev/null; then
-        rm -f /tmp/enable_exop.ldif
         log "Password Modify Extended Operation enabled via module modification"
         return 0
     fi
@@ -554,12 +478,10 @@ olcModuleLoad: ppolicy
 EOF
 
     if slapadd -F /etc/ldap/slapd.d -n 0 -l /tmp/enable_exop.ldif 2>/dev/null; then
-        rm -f /tmp/enable_exop.ldif
         log "Password Modify Extended Operation enabled via new module entry"
         return 0
     fi
     
-    rm -f /tmp/enable_exop.ldif
     warn "Could not enable Password Modify Extended Operation, continuing anyway"
 }
 
@@ -662,10 +584,8 @@ import_ldif_files() {
     fi
 }
 
-# ----------------------------------------------------------------------------
-# Marker File Management
-# ----------------------------------------------------------------------------
-
+# Note: Lines 666-668 from original script removed - "Marker File Management" section
+# was empty with no implementation and therefore unreachable/unused code.
 
 # ----------------------------------------------------------------------------
 # Normal Start Function
@@ -709,8 +629,7 @@ first_run_initialization() {
     log "=== First Run Initialization ==="
     
     clean_database
-    initialize_config
-    ensure_config_structure
+    initialize_config_database
     set_config_password
     create_database
     set_admin_password
