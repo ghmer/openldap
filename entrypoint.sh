@@ -511,8 +511,49 @@ EOF
 }
 
 # ----------------------------------------------------------------------------
-# Schema and Data Loading
+# Schema and Data Loading with Hash Tracking
 # ----------------------------------------------------------------------------
+
+# State file to track imported files
+STATE_FILE="/var/lib/ldap/.state"
+
+# Calculate SHA256 hash of a file
+calculate_hash() {
+    local file="$1"
+    sha256sum "$file" | awk '{print $1}'
+}
+
+# Check if file was already imported with same hash
+is_already_imported() {
+    local file="$1"
+    local current_hash=$(calculate_hash "$file")
+    local filename=$(basename "$file")
+    
+    # Create state file if it doesn't exist
+    [ -f "$STATE_FILE" ] || touch "$STATE_FILE"
+    
+    # Check if hash exists in state file
+    if grep -q "^${filename}:${current_hash}$" "$STATE_FILE" 2>/dev/null; then
+        return 0  # Already imported
+    fi
+    
+    return 1  # Not imported or hash changed
+}
+
+# Mark file as imported by storing its hash
+mark_as_imported() {
+    local file="$1"
+    local current_hash=$(calculate_hash "$file")
+    local filename=$(basename "$file")
+    
+    # Remove old entry for this file if exists
+    if [ -f "$STATE_FILE" ]; then
+        sed -i "/^${filename}:/d" "$STATE_FILE"
+    fi
+    
+    # Add new entry
+    echo "${filename}:${current_hash}" >> "$STATE_FILE"
+}
 
 load_schemas() {
     log "Loading custom schemas..."
@@ -522,10 +563,18 @@ load_schemas() {
         for schema in "$LDAP_SCHEMA_DIRECTORY"/*.ldif; do
             [ -f "$schema" ] || continue
             
+            if is_already_imported "$schema"; then
+                log "Skipping schema (already imported): $(basename $schema)"
+                continue
+            fi
+            
             log "Loading schema: $(basename $schema)"
-            slapadd -F /etc/ldap/slapd.d -n 0 -l "$schema" || {
+            if slapadd -F /etc/ldap/slapd.d -n 0 -l "$schema"; then
+                mark_as_imported "$schema"
+                log "Successfully imported schema: $(basename $schema)"
+            else
                 warn "Failed to load schema $schema, continuing..."
-            }
+            fi
         done
     else
         log "No custom schema directory found at $LDAP_SCHEMA_DIRECTORY"
@@ -540,10 +589,18 @@ import_ldif_files() {
         for ldif in "$LDAP_LDIF_DATA_DIRECTORY"/*.ldif; do
             [ -f "$ldif" ] || continue
             
+            if is_already_imported "$ldif"; then
+                log "Skipping LDIF (already imported): $(basename $ldif)"
+                continue
+            fi
+            
             log "Importing: $(basename $ldif)"
-            slapadd -b "$LDAP_BASE_DN" -l "$ldif" -F /etc/ldap/slapd.d || {
+            if slapadd -b "$LDAP_BASE_DN" -l "$ldif" -F /etc/ldap/slapd.d; then
+                mark_as_imported "$ldif"
+                log "Successfully imported LDIF: $(basename $ldif)"
+            else
                 warn "Failed to import $ldif, continuing..."
-            }
+            fi
         done
     else
         log "No LDIF files found in $LDAP_LDIF_DATA_DIRECTORY"
