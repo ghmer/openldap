@@ -31,12 +31,15 @@ RUN echo 'slapd slapd/no_configuration boolean false' | debconf-set-selections
 # install slapd
 RUN DEBIAN_FRONTEND=noninteractive apt update && DEBIAN_FRONTEND=noninteractive apt full-upgrade -y && DEBIAN_FRONTEND=noninteractive apt-get -y install slapd ldap-utils
 
+# Preserve default config before creating non-root user
+RUN cp -r /etc/ldap/slapd.d /etc/ldap/slapd.d.default
+
 # Create a non-root user
 RUN addgroup --quiet --gid ${groupid} ${groupname} && \
     adduser --uid ${userid} --gid ${groupid} --comment "" --no-create-home --disabled-password ${username} && \
     mkdir -p /var/run/slapd /import/ldif /import/schema /import/certs && \
     chown -R ${userid}:${groupid} /etc/ldap /var/run/slapd /var/lib/ldap /import && \
-    rm -rf /var/lib/ldap/* 
+    rm -rf /var/lib/ldap/*
 
 # entryscript
 COPY entrypoint.sh /entrypoint.sh
