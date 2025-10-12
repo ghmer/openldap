@@ -231,15 +231,20 @@ initialize_config() {
     
     # Check if config exists
     if [ ! -f "/etc/ldap/slapd.d/cn=config.ldif" ]; then
-        # Try to generate from slapd.conf if available
-        if [ -f "/etc/ldap/slapd.conf" ]; then
+        # First, try to copy from preserved default config
+        if [ -d "/etc/ldap/slapd.d.default" ] && [ "$(ls -A /etc/ldap/slapd.d.default 2>/dev/null)" ]; then
+            log "Copying default config from /etc/ldap/slapd.d.default..."
+            cp -r /etc/ldap/slapd.d.default/* /etc/ldap/slapd.d/
+            log "Default config copied successfully"
+        # Fallback: Try to generate from slapd.conf if available
+        elif [ -f "/etc/ldap/slapd.conf" ]; then
             if ! slaptest -f /etc/ldap/slapd.conf -F /etc/ldap/slapd.d 2>/dev/null; then
                 warn "Could not generate config from slapd.conf, will create minimal config"
             else
                 log "Generated cn=config tree from slapd.conf"
             fi
         else
-            warn "/etc/ldap/slapd.conf not found, will create minimal config"
+            warn "No default config or slapd.conf found, will create minimal config"
         fi
     fi
     
