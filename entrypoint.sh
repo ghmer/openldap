@@ -353,7 +353,7 @@ olcDbIndex: member,memberUid eq
 replace: olcAccess
 olcAccess: {0}to attrs=userPassword,shadowLastChange by self write by anonymous auth by * none
 olcAccess: {1}to dn.base="" by * read
-olcAccess: {2}to * by self write by * read
+olcAccess: {2}to * by self write by * none
 EOF
 
         if ! slapmodify -F /etc/ldap/slapd.d -n 0 -l /tmp/database_modify.ldif; then
@@ -380,7 +380,7 @@ olcDbIndex: uidNumber,gidNumber eq
 olcDbIndex: member,memberUid eq
 olcAccess: {0}to attrs=userPassword,shadowLastChange by self write by anonymous auth by * none
 olcAccess: {1}to dn.base="" by * read
-olcAccess: {2}to * by self write by * read
+olcAccess: {2}to * by self write by * none
 EOF
 
     if ! slapadd -F /etc/ldap/slapd.d -n 0 -l /tmp/database.ldif; then
@@ -603,11 +603,19 @@ first_run_initialization() {
     create_database
     set_admin_password
     create_base_entry
+
+    log "=== Initialization Complete ==="
+}
+
+apply_configuration() {
+    log "=== Applying Config Changes From Env Variables ==="
+
     configure_tls
     configure_anonymous_binding
     load_schemas
     import_ldif_files
-    log "=== Initialization Complete ==="
+
+    log "=== Configuration Complete ==="
 }
 
 # ============================================================================
@@ -625,9 +633,11 @@ verify_runtime_paths
 # Check initialization state
 if has_existing_ldap_data; then
     log "Existing LDAP configuration/data detected, starting without initialization"
+    apply_configuration
     normal_start
 else
     log "No LDAP configuration/data detected, performing first-run initialization"
     first_run_initialization
+    apply_configuration
     normal_start
 fi
