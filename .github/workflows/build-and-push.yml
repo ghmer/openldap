@@ -16,6 +16,7 @@ on:
 env:
   IMAGE_NAME: garthako/openldap
   IMAGE_TAG: v2.6
+  GHCR_IMAGE: ghcr.io/ghmer/openldap
 
 jobs:
   build-and-push:
@@ -45,6 +46,13 @@ jobs:
             exit 1
           }
 
+      - name: Log in to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Prepare image tags
         id: prep
         env:
@@ -57,16 +65,19 @@ jobs:
             VERSION="${IMAGE_TAG}"
           fi
           
-          # Start with base tags (version from env/var + latest)
+          # Base tags for Docker Hub
           TAG_ARGS="--tag ${IMAGE_NAME}:${VERSION} --tag ${IMAGE_NAME}:latest"
+          
+          # Add GitHub Container Registry tags
+          TAG_ARGS="${TAG_ARGS} --tag ${GHCR_IMAGE}:${VERSION} --tag ${GHCR_IMAGE}:latest"
           
           # If this is a tag push, add the Git tag as an additional Docker tag
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             GIT_TAG="${GITHUB_REF#refs/tags/}"
-            TAG_ARGS="${TAG_ARGS} --tag ${IMAGE_NAME}:${GIT_TAG}"
-            echo "Building with tags: ${VERSION}, ${GIT_TAG}, latest"
+            TAG_ARGS="${TAG_ARGS} --tag ${IMAGE_NAME}:${GIT_TAG} --tag ${GHCR_IMAGE}:${GIT_TAG}"
+            echo "Building with tags: ${VERSION}, ${GIT_TAG}, latest for Docker Hub and GHCR"
           else
-            echo "Building with tags: ${VERSION}, latest"
+            echo "Building with tags: ${VERSION}, latest for Docker Hub and GHCR"
           fi
           
           echo "tags=${TAG_ARGS}" >> "$GITHUB_OUTPUT"
