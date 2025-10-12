@@ -73,7 +73,9 @@ verify_runtime_paths() {
 }
 
 has_existing_ldap_data() {
-    if find /var/lib/ldap -mindepth 1 -print -quit 2>/dev/null | grep -q .; then
+    # Check for actual LDAP database files, not just any files
+    # Ignore lost+found (filesystem metadata) and .state (our tracking file)
+    if [ -f "/var/lib/ldap/data.mdb" ] ; then
         return 0
     fi
 
