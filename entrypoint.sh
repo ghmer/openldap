@@ -511,6 +511,52 @@ EOF
 }
 
 # ----------------------------------------------------------------------------
+# Password Modify Extended Operation Configuration
+# ----------------------------------------------------------------------------
+
+enable_password_modify_exop() {
+    log "Enabling LDAPv3 Password Modify Extended Operation..."
+    
+    # Check if ppolicy module is already loaded
+    if slapcat -F /etc/ldap/slapd.d -n 0 2>/dev/null | grep -q "olcModuleLoad.*ppolicy"; then
+        log "Password Modify Extended Operation already enabled"
+        return 0
+    fi
+    
+    # Create LDIF to load ppolicy module
+    cat > /tmp/enable_exop.ldif <<EOF
+dn: cn=module{0},cn=config
+changetype: modify
+add: olcModuleLoad
+olcModuleLoad: ppolicy
+EOF
+
+    # Try to modify existing module entry first
+    if slapmodify -F /etc/ldap/slapd.d -n 0 -l /tmp/enable_exop.ldif 2>/dev/null; then
+        rm -f /tmp/enable_exop.ldif
+        log "Password Modify Extended Operation enabled via module modification"
+        return 0
+    fi
+    
+    # If modification failed, try to add new module entry
+    cat > /tmp/enable_exop.ldif <<EOF
+dn: cn=module{0},cn=config
+objectClass: olcModuleList
+cn: module{0}
+olcModuleLoad: ppolicy
+EOF
+
+    if slapadd -F /etc/ldap/slapd.d -n 0 -l /tmp/enable_exop.ldif 2>/dev/null; then
+        rm -f /tmp/enable_exop.ldif
+        log "Password Modify Extended Operation enabled via new module entry"
+        return 0
+    fi
+    
+    rm -f /tmp/enable_exop.ldif
+    warn "Could not enable Password Modify Extended Operation, continuing anyway"
+}
+
+# ----------------------------------------------------------------------------
 # Schema and Data Loading with Hash Tracking
 # ----------------------------------------------------------------------------
 
@@ -595,7 +641,9 @@ import_ldif_files() {
             fi
             
             log "Importing: $(basename $ldif)"
-            if slapadd -b "$LDAP_BASE_DN" -l "$ldif" -F /etc/ldap/slapd.d; then
+            # -c: continue on errors (skip duplicates like base DN)
+            # -w: write operational attributes (entryUUID, timestamps, etc.)
+            if slapadd -c -w -b "$LDAP_BASE_DN" -l "$ldif" -F /etc/ldap/slapd.d; then
                 mark_as_imported "$ldif"
                 log "Successfully imported LDIF: $(basename $ldif)"
             else
@@ -660,6 +708,7 @@ first_run_initialization() {
     create_database
     set_admin_password
     create_base_entry
+    enable_password_modify_exop
 
     log "=== Initialization Complete ==="
 }
