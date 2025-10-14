@@ -2,7 +2,7 @@ apiVersion: v2
 name: openldap
 description: A Helm chart for OpenLDAP directory service
 type: application
-version: 1.0.0
+version: 1.0.7
 appVersion: "latest"
 maintainers:
   - name: Mario Enrico Ragucci
