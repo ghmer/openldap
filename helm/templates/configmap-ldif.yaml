@@ -1,0 +1,11 @@
+{{- if .Values.ldifData.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "openldap.fullname" . }}-ldif
+  namespace: {{ include "openldap.namespace" . }}
+  labels:
+    {{- include "openldap.labels" . | nindent 4 }}
+data:
+  {{- toYaml .Values.ldifData.data | nindent 2 }}
+{{- end }}

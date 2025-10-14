@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "openldap.fullname" . }}-config
+  namespace: {{ include "openldap.namespace" . }}
+  labels:
+    {{- include "openldap.labels" . | nindent 4 }}
+data:
+  LDAP_BASE_DN: {{ .Values.ldap.baseDN | quote }}
+  LDAP_ADMIN_USER: {{ .Values.ldap.adminUser | quote }}
+  LDAP_DOMAIN: {{ .Values.ldap.domain | quote }}
+  LDAP_ORGANISATION: {{ .Values.ldap.organisation | quote }}
+  LDAP_ENABLE_TLS: {{ .Values.tls.enabled | ternary "true" "false" | quote }}
+  LDAP_ALLOW_ANON_BINDING: {{ .Values.ldap.allowAnonymousBinding | quote }}
+  LDAP_SCHEMA_DIRECTORY: {{ .Values.ldap.schemaDirectory | quote }}
+  LDAP_LDIF_DATA_DIRECTORY: {{ .Values.ldap.ldifDataDirectory | quote }}
+  LDAP_PORT: {{ .Values.ldap.port | quote }}
+  {{- if .Values.tls.enabled }}
+  LDAP_TLS_CERT_FILE: {{ printf "%s/tls.crt" .Values.tls.certPath | quote }}
+  LDAP_TLS_KEY_FILE: {{ printf "%s/tls.key" .Values.tls.certPath | quote }}
+  LDAP_TLS_CA_FILE: {{ printf "%s/tls.crt" .Values.tls.certPath | quote }}
+  LDAP_TLS_VERIFY_CLIENT: {{ .Values.tls.verifyClient | quote }}
+  LDAPS_PORT: {{ .Values.tls.port | quote }}
+  {{- end }}

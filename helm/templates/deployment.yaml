@@ -1,0 +1,140 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "openldap.fullname" . }}
+  namespace: {{ include "openldap.namespace" . }}
+  labels:
+    {{- include "openldap.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "openldap.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "openldap.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: directory-service
+      annotations:
+        prometheus.io/scrape: "false"
+    spec:
+      securityContext:
+        runAsUser: {{ .Values.securityContext.runAsUser }}
+        runAsGroup: {{ .Values.securityContext.runAsGroup }}
+        fsGroup: {{ .Values.securityContext.fsGroup }}
+        runAsNonRoot: {{ .Values.securityContext.runAsNonRoot }}
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: openldap
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+            runAsUser: {{ .Values.securityContext.runAsUser }}
+            runAsGroup: {{ .Values.securityContext.runAsGroup }}
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: ldap
+              containerPort: {{ .Values.ldap.port }}
+              protocol: TCP
+            {{- if .Values.tls.enabled }}
+            - name: ldaps
+              containerPort: 1636
+              protocol: TCP
+            {{- end }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "openldap.fullname" . }}-config
+          env:
+            - name: LDAP_ADMIN_PW
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "openldap.fullname" . }}-secrets
+                  key: LDAP_ADMIN_PW
+            - name: LDAP_CONFIG_ADMIN_PW
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "openldap.fullname" . }}-secrets
+                  key: LDAP_CONFIG_ADMIN_PW
+          volumeMounts:
+            - name: ldap-data
+              mountPath: /var/lib/ldap
+            - name: ldap-config
+              mountPath: /etc/ldap/slapd.d
+            {{- if .Values.schemas.enabled }}
+            - name: import-schema
+              mountPath: {{ .Values.ldap.schemaDirectory }}
+              readOnly: true
+            {{- end }}
+            {{- if .Values.ldifData.enabled }}
+            - name: import-ldif
+              mountPath: {{ .Values.ldap.ldifDataDirectory }}
+              readOnly: true
+            {{- end }}
+            {{- if .Values.tls.enabled }}
+            - name: tls-certs
+              mountPath: {{ .Values.tls.certPath }}
+              readOnly: true
+            {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - ldapsearch -x -H ldapi:/// -b '' -s base '(objectclass=*)' namingContexts || exit 1
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.livenessProbe.failureThreshold }}
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - ldapsearch -x -H ldapi:/// -b '' -s base '(objectclass=*)' namingContexts || exit 1
+            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.readinessProbe.failureThreshold }}
+      volumes:
+        - name: ldap-data
+          {{- if .Values.persistence.data.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "openldap.fullname" . }}-data
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: ldap-config
+          {{- if .Values.persistence.config.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "openldap.fullname" . }}-config
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- if .Values.schemas.enabled }}
+        - name: import-schema
+          configMap:
+            name: {{ include "openldap.fullname" . }}-schemas
+            optional: true
+        {{- end }}
+        {{- if .Values.ldifData.enabled }}
+        - name: import-ldif
+          configMap:
+            name: {{ include "openldap.fullname" . }}-ldif
+            optional: true
+        {{- end }}
+        {{- if .Values.tls.enabled }}
+        - name: tls-certs
+          secret:
+            secretName: {{ .Values.tls.certificateSecret }}
+            optional: false
+        {{- end }}

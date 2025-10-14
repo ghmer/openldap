@@ -1,0 +1,44 @@
+OpenLDAP has been installed successfully!
+
+1. Get the application URL:
+{{- if .Values.ingressRoute.enabled }}
+  LDAPS is available at:
+  {{- range .Values.ingressRoute.hosts }}
+  - ldaps://{{ . }}:636
+  {{- end }}
+{{- else }}
+  Run these commands to access OpenLDAP:
+  
+  export POD_NAME=$(kubectl get pods --namespace {{ include "openldap.namespace" . }} -l "app.kubernetes.io/name={{ include "openldap.name" . }},app.kubernetes.io/instance={{ .Release.Name }}" -o jsonpath="{.items[0].metadata.name}")
+  kubectl --namespace {{ include "openldap.namespace" . }} port-forward $POD_NAME 1389:{{ .Values.ldap.port }}
+  
+  Then connect to ldap://localhost:1389
+{{- end }}
+
+2. LDAP Configuration:
+  Base DN: {{ .Values.ldap.baseDN }}
+  Admin User: {{ .Values.ldap.adminUser }},{{ .Values.ldap.baseDN }}
+  Domain: {{ .Values.ldap.domain }}
+
+3. Get admin password:
+  kubectl get secret --namespace {{ include "openldap.namespace" . }} {{ include "openldap.fullname" . }}-secrets -o jsonpath="{.data.LDAP_ADMIN_PW}" | base64 --decode
+
+4. Test LDAP connection:
+  ldapsearch -x -H ldap://{{ include "openldap.fullname" . }}.{{ include "openldap.namespace" . }}.svc.cluster.local:{{ .Values.service.port }} -b "{{ .Values.ldap.baseDN }}" -D "{{ .Values.ldap.adminUser }},{{ .Values.ldap.baseDN }}" -W
+
+5. Verify deployment:
+  kubectl --namespace {{ include "openldap.namespace" . }} get all -l "app.kubernetes.io/instance={{ .Release.Name }}"
+
+{{- if .Values.persistence.data.enabled }}
+Data persistence is enabled using PVC: {{ include "openldap.fullname" . }}-data
+{{- else }}
+WARNING: Data persistence is disabled. Data will be lost on pod restart.
+{{- end }}
+
+{{- if .Values.schemas.enabled }}
+Custom schemas have been loaded from ConfigMap.
+{{- end }}
+
+{{- if .Values.ldifData.enabled }}
+LDIF data has been imported from ConfigMap.
+{{- end }}

@@ -1,0 +1,11 @@
+{{- if .Values.schemas.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "openldap.fullname" . }}-schemas
+  namespace: {{ include "openldap.namespace" . }}
+  labels:
+    {{- include "openldap.labels" . | nindent 4 }}
+data:
+  {{- toYaml .Values.schemas.data | nindent 2 }}
+{{- end }}

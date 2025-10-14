@@ -1,0 +1,31 @@
+{{- if .Values.ingressRoute.enabled }}
+apiVersion: traefik.io/v1alpha1
+kind: IngressRouteTCP
+metadata:
+  name: {{ include "openldap.fullname" . }}-ldaps
+  namespace: {{ include "openldap.namespace" . }}
+  labels:
+    {{- include "openldap.labels" . | nindent 4 }}
+spec:
+  entryPoints:
+    {{- toYaml .Values.ingressRoute.entryPoints | nindent 4 }}
+  routes:
+    {{- range .Values.ingressRoute.hosts }}
+    - match: HostSNI(`{{ . }}`)
+      services:
+        - name: {{ include "openldap.fullname" $ }}
+          {{- if and $.Values.tls.enabled (eq $.Values.tls.mode "passthrough") }}
+          port: 636
+          {{- else }}
+          port: {{ $.Values.service.port }}
+          {{- end }}
+    {{- end }}
+  {{- if .Values.tls.enabled }}
+  tls:
+    {{- if eq .Values.tls.mode "passthrough" }}
+    passthrough: true
+    {{- else }}
+    secretName: {{ .Values.ingressRoute.tls.secretName }}
+    {{- end }}
+  {{- end }}
+{{- end }}

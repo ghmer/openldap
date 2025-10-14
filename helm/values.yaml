@@ -1,0 +1,120 @@
+# Default values for openldap
+
+# Namespace configuration
+# Set to false - let Helm manage namespace via --create-namespace flag
+namespaceCreate: false
+namespace: openldap
+
+# Image configuration
+image:
+  repository: garthako/openldap
+  tag: v2.6
+  pullPolicy: Always
+
+# Replica count (keep at 1 for RWO volumes)
+replicaCount: 1
+
+# LDAP configuration
+ldap:
+  baseDN: "dc=example,dc=local"
+  domain: "ldap.example.local"
+  organisation: "Example Organization"
+  adminUser: "cn=admin"
+  port: 1389
+  allowAnonymousBinding: false
+  schemaDirectory: "/import/schema"
+  ldifDataDirectory: "/import/ldif"
+
+# TLS configuration
+tls:
+  enabled: true
+  port: 1636
+  mode: passthrough  # passthrough or termination
+  certificateSecret: ldaps-cert-tls
+  certPath: /etc/ldap/certs
+  verifyClient: try  # never, allow, try, demand
+
+# Secrets - base64 encoded passwords
+secrets:
+  adminPassword: YWRtaW5QYXNzd29yZAo=
+  configAdminPassword: Q29uZmlnQWRtaW5QYXNzd29yZAo=
+
+# Security context
+securityContext:
+  runAsUser: 1001
+  runAsGroup: 1001
+  fsGroup: 1001
+  runAsNonRoot: true
+
+# Resource limits
+resources:
+  requests:
+    cpu: 10m
+    memory: 1Gi
+  limits:
+    cpu: 50m
+    memory: 2Gi
+
+# Probes configuration
+livenessProbe:
+  initialDelaySeconds: 0
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 3
+
+readinessProbe:
+  initialDelaySeconds: 0
+  periodSeconds: 10
+  timeoutSeconds: 10
+  failureThreshold: 3
+
+# Persistence
+persistence:
+  data:
+    enabled: true
+    size: 512Mi
+    storageClass: ""
+    accessMode: ReadWriteOnce
+  config:
+    enabled: true
+    size: 128Mi
+    storageClass: ""
+    accessMode: ReadWriteOnce
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 389
+  sessionAffinity:
+    enabled: true
+    timeoutSeconds: 10800
+
+# Traefik IngressRouteTCP
+ingressRoute:
+  enabled: true
+  entryPoints:
+    - ldaps
+  hosts:
+    - ldap.example.local
+  tls:
+    secretName: ldaps-cert-tls
+
+# cert-manager Certificate
+certificate:
+  enabled: true
+  secretName: ldaps-cert-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - ldap.example.local
+  renewBefore: 72h
+
+# LDAP schemas (optional)
+schemas:
+  enabled: true
+  data: {}
+# LDIF data (optional)
+ldifData:
+  enabled: true
+  data: {}
