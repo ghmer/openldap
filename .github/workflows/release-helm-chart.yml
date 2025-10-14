@@ -135,6 +135,8 @@ jobs:
             git checkout --orphan "${GH_PAGES_BRANCH}"
             rm -rf *
             touch .nojekyll
+            git config user.name "${GITHUB_ACTOR}"
+            git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
             git add .nojekyll
             git commit -m "Initialize ${GH_PAGES_BRANCH} branch"
           fi
