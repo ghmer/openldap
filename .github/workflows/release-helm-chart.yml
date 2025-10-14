@@ -128,9 +128,9 @@ jobs:
           set -euo pipefail
           REPO="https://${GITHUB_ACTOR}:${TOKEN}@github.com/${GITHUB_REPOSITORY}"
           if git ls-remote --exit-code origin "${GH_PAGES_BRANCH}" >/dev/null 2>&1; then
-            git clone --branch "${GH_PAGES_BRANCH}" --depth 0 "${REPO}" gh-pages
+            git clone --branch "${GH_PAGES_BRANCH}" --depth 1 "${REPO}" gh-pages
           else
-            git clone --depth 0 "${REPO}" gh-pages
+            git clone --depth 1 "${REPO}" gh-pages
             cd gh-pages
             git checkout --orphan "${GH_PAGES_BRANCH}"
             rm -rf *
