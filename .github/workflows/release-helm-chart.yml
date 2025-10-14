@@ -48,21 +48,7 @@ jobs:
         run: |
           helm lint helm/
 
-      # Step 5: Create gh-pages branch if it doesn't exist
-      - name: Create gh-pages branch if needed
-        run: |
-          if ! git ls-remote --heads origin gh-pages | grep -q gh-pages; then
-            echo "Creating gh-pages branch..."
-            git checkout --orphan gh-pages
-            git reset --hard
-            git commit --allow-empty -m "Initialize gh-pages branch"
-            git push origin gh-pages
-            git checkout -
-          else
-            echo "gh-pages branch already exists"
-          fi
-
-      # Step 6: Run chart-releaser to package and publish the chart
+      # Step 5: Run chart-releaser to package and publish the chart
       # This action will:
       # - Package the chart into a .tgz file
       # - Create a GitHub release with the packaged chart
@@ -76,7 +62,6 @@ jobs:
           skip_existing: true
         env:
           CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
-        continue-on-error: true
 
       - name: Check if release was created
         id: check_release
