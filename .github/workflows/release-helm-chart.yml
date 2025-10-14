@@ -1,0 +1,94 @@
+name: Release Helm Chart
+
+on:
+  # Trigger on push to main branch when helm/ directory changes
+  # or on version tags
+  push:
+    branches:
+      - main
+    paths:
+      - 'helm/**'
+    tags:
+      - 'v*'
+  # Allow manual workflow dispatch
+  workflow_dispatch:
+
+# Set permissions for GitHub token
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      # Step 1: Checkout the repository with full history for chart-releaser
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Step 2: Configure Git for GitHub Actions bot
+      - name: Configure Git
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+
+      # Step 3: Install Helm
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'latest'
+
+      # Step 4: Lint the Helm chart to validate syntax and structure
+      - name: Lint Helm chart
+        run: |
+          helm lint helm/
+
+      # Step 5: Run chart-releaser to package and publish the chart
+      # This action will:
+      # - Package the chart into a .tgz file
+      # - Create a GitHub release with the packaged chart
+      # - Update the index.yaml file for the Helm repository
+      # - Push changes to the gh-pages branch
+      - name: Run chart-releaser
+        uses: helm/chart-releaser-action@v1.6.0
+        with:
+          charts_dir: .
+          config: |
+            owner: ghmer
+            git-repo: openldap
+        env:
+          CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+          CR_SKIP_EXISTING: true
+
+  # Deploy to GitHub Pages
+  deploy-pages:
+    needs: release
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      # Step 1: Checkout gh-pages branch
+      - name: Checkout gh-pages branch
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          fetch-depth: 0
+
+      # Step 2: Setup Pages
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      # Step 3: Upload artifact for GitHub Pages
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+      # Step 4: Deploy to GitHub Pages
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
