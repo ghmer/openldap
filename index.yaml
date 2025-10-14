@@ -1,0 +1,24 @@
+apiVersion: v1
+entries:
+  openldap:
+  - apiVersion: v2
+    appVersion: latest
+    created: "2025-10-14T21:41:47.557695988Z"
+    description: A Helm chart for OpenLDAP directory service
+    digest: c85e8424336e224383c7a1227d003809ab37ae8b55e4b514b86544382680116f
+    keywords:
+    - openldap
+    - ldap
+    - directory
+    maintainers:
+    - email: openldap@r5i.xyz
+      name: Mario Enrico Ragucci
+      url: https://github.com/ghmer/openldap-container
+    name: openldap
+    sources:
+    - https://github.com/ghmer/openldap-container
+    type: application
+    urls:
+    - https://ghmer.github.io/openldap/openldap-1.0.7.tgz
+    version: 1.0.7
+generated: "2025-10-14T21:41:47.556933331Z"
