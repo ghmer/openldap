@@ -22,6 +22,8 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.check_release.outputs.created }}
     steps:
       # Step 1: Checkout the repository with full history for chart-releaser
       - name: Checkout repository
@@ -53,37 +55,74 @@ jobs:
       # - Update the index.yaml file for the Helm repository
       # - Push changes to the gh-pages branch
       - name: Run chart-releaser
+        id: chart_releaser
         uses: helm/chart-releaser-action@v1.6.0
         env:
           CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
           CR_SKIP_EXISTING: true
+        continue-on-error: true
+
+      - name: Check if release was created
+        id: check_release
+        run: |
+          if [ "${{ steps.chart_releaser.outcome }}" == "success" ]; then
+            echo "created=true" >> "$GITHUB_OUTPUT"
+            echo "Chart release created successfully"
+          else
+            echo "created=false" >> "$GITHUB_OUTPUT"
+            echo "No new chart release (version may already exist)"
+          fi
 
   # Deploy to GitHub Pages
   deploy-pages:
     needs: release
+    if: needs.release.outputs.release_created == 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      # Step 1: Checkout gh-pages branch
+      # Step 1: Checkout repository to check for gh-pages branch
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Step 2: Check if gh-pages branch exists
+      - name: Check gh-pages branch exists
+        id: check_branch
+        run: |
+          if git ls-remote --heads origin gh-pages | grep -q gh-pages; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "gh-pages branch exists"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "gh-pages branch does not exist yet. Skipping deployment."
+            echo "The branch will be created by chart-releaser. Run the workflow again after the first release."
+          fi
+
+      # Step 3: Checkout gh-pages branch if it exists
       - name: Checkout gh-pages branch
+        if: steps.check_branch.outputs.exists == 'true'
         uses: actions/checkout@v4
         with:
           ref: gh-pages
           fetch-depth: 0
 
-      # Step 2: Setup Pages
+      # Step 4: Setup Pages
       - name: Setup Pages
+        if: steps.check_branch.outputs.exists == 'true'
         uses: actions/configure-pages@v4
 
-      # Step 3: Upload artifact for GitHub Pages
+      # Step 5: Upload artifact for GitHub Pages
       - name: Upload artifact
+        if: steps.check_branch.outputs.exists == 'true'
         uses: actions/upload-pages-artifact@v3
         with:
           path: '.'
 
-      # Step 4: Deploy to GitHub Pages
+      # Step 6: Deploy to GitHub Pages
       - name: Deploy to GitHub Pages
+        if: steps.check_branch.outputs.exists == 'true'
         id: deployment
         uses: actions/deploy-pages@v4
