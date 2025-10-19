@@ -2,6 +2,8 @@
 
 A Helm chart for deploying OpenLDAP directory service on Kubernetes.
 
+**Note:** This chart is available via Helm repository for easier installation. See the [Installation from Helm Repository](#installation-from-helm-repository) section below.
+
 ## Prerequisites
 
 - Kubernetes 1.19+
@@ -10,7 +12,55 @@ A Helm chart for deploying OpenLDAP directory service on Kubernetes.
 - Traefik ingress controller (if IngressRouteTCP is enabled)
 - cert-manager (if Certificate resource is enabled)
 
-## Installation
+## Installation from Helm Repository
+
+The easiest way to install the OpenLDAP chart is from the Helm repository.
+
+### Add the Helm repository
+
+```bash
+helm repo add openldap https://ghmer.github.io/openldap
+```
+
+### Update the repository
+
+```bash
+helm repo update
+```
+
+### Search for available charts
+
+```bash
+helm search repo openldap
+```
+
+### Install the chart
+
+```bash
+helm install my-openldap openldap/openldap
+```
+
+### Install with custom values
+
+```bash
+helm install my-openldap openldap/openldap -f custom-values.yaml
+```
+
+### Install a specific version
+
+```bash
+helm install my-openldap openldap/openldap --version 1.0.0
+```
+
+### Install in a specific namespace
+
+```bash
+helm install my-openldap openldap/openldap --namespace openldap --create-namespace
+```
+
+## Installation from Local Chart
+
+If you prefer to install from a local copy of the chart:
 
 ### Install from local chart
 
@@ -134,7 +184,13 @@ The following table lists the configurable parameters and their default values.
 
 ## Usage Examples
 
-### Basic Installation
+### Basic Installation from Repository
+
+```bash
+helm install my-openldap openldap/openldap
+```
+
+### Basic Installation from Local Chart
 
 ```bash
 helm install openldap ./helm
@@ -196,6 +252,14 @@ helm install openldap ./helm -f storage-values.yaml
 
 ## Upgrading
 
+### Upgrade from repository
+
+```bash
+helm upgrade my-openldap openldap/openldap
+```
+
+### Upgrade from local chart
+
 ```bash
 helm upgrade openldap ./helm
 ```
@@ -203,6 +267,10 @@ helm upgrade openldap ./helm
 ## Uninstalling
 
 ```bash
+# If installed from repository as my-openldap
+helm uninstall my-openldap
+
+# If installed from local chart as openldap
 helm uninstall openldap
 ```
 

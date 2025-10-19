@@ -10,14 +10,12 @@ services:
       dockerfile: Dockerfile
     image: openldap:latest
     container_name: openldap
-    hostname: ldap.example.com
-    ulimits:
-      nofile: 1024
+    hostname: ldap.example.local
     
     # Environment variables for LDAP configuration
     environment:
       # Required variables
-      LDAP_BASE_DN: "dc=example,dc=com"
+      LDAP_BASE_DN: "dc=example,dc=local"
       LDAP_ADMIN_USER: "cn=admin"
       LDAP_ADMIN_PW: "admin_password"
       LDAP_CONFIG_ADMIN_PW: "config_password"
@@ -28,8 +26,8 @@ services:
       LDAP_TLS_KEY_FILE: "/import/certs/server.key"
       LDAP_TLS_CA_FILE: "/import/certs/ca.crt"
       LDAP_TLS_VERIFY_CLIENT: "try" # never | allow | try | demand
-      
-      # Optional: Anonymous binding (enabled by default)
+
+      # Optional: Anonymous binding (disabled by default)
       LDAP_ALLOW_ANON_BINDING: "false"
       
       # Optional: Custom directories
@@ -46,13 +44,15 @@ services:
       - ldap_config:/etc/ldap/slapd.d
       
       # Optional: Mount custom schemas and LDIF files
-      # - ./schemas:/import/schema:ro
-      # - ./ldif:/import/ldif:ro
+      - ./schema:/import/schema:ro
+      - ./ldif:/import/ldif:ro
       # Optional: TLS certificates
-      # - ./certs:/import/certs:ro
+      - ./certs:/import/certs:ro
     
     # Security context for non-root execution
     user: "1001:1001"
+    ulimits:
+      nofile: 1024
     
     # Health check
     healthcheck:
