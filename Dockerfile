@@ -48,8 +48,6 @@ RUN chmod +x /entrypoint.sh
 USER ${username}
 VOLUME [ "/etc/ldap/slapd.d" ]
 VOLUME [ "/var/lib/ldap" ]
-VOLUME [ "/import/certs" ]
-VOLUME [ "/import/schema" ]
-VOLUME [ "/import/ldif" ]
+VOLUME [ "/import" ]
 
 CMD ["/entrypoint.sh"]
