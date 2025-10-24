@@ -7,7 +7,7 @@ namespace: openldap
 
 # Image configuration
 image:
-  repository: garthako/openldap
+  repository: ghcr.io/ghmer/openldap
   tag: v2.6
   pullPolicy: Always
 
