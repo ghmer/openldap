@@ -1,16 +1,22 @@
 # OpenLDAP Container Image
 
+[![Build and Push Docker Image](https://github.com/ghmer/openldap/actions/workflows/build-and-push.yml/badge.svg?branch=main)](https://github.com/ghmer/openldap/actions/workflows/build-and-push.yml)
+[![Release Helm Chart](https://github.com/ghmer/openldap/actions/workflows/release-helm-chart.yml/badge.svg?branch=main)](https://github.com/ghmer/openldap/actions/workflows/release-helm-chart.yml)
+
+
 A privately-maintained OpenLDAP container image.
 
 **Maintainer:** Mario Enrico Ragucci (ghmer) - [openldap@r5i.xyz](mailto:openldap@r5i.xyz)
-**Repository:** [https://github.com/ghmer/openldap-container](https://github.com/ghmer/openldap-container)
-**License:** MIT
 
-**⚠️ WORK IN PROGRESS - NOT PRODUCTION READY**
+**Repository:** [https://github.com/ghmer/openldap-container](https://github.com/ghmer/openldap-container)
+**Image:** [ghcr.io/ghmer/openldap:v2.6](ghcr.io/ghmer/openldap:v2.6)
+
+
+**⚠️ WORK IN PROGRESS**
 
 This image is under development and definitely lacks reviews. Some functionality is still missing. Use at your own risk.
 
-Its aim is to provide a container image that is kept up to date. It can be found in dockerhub: [garthako/openldap:latest](https://hub.docker.com/r/garthako/openldap)
+Its aim is to provide a container image that is kept up to date: [ghcr.io/ghmer/openldap:v2.6](ghcr.io/ghmer/openldap:v2.6)
 
 ## Quick Start
 
@@ -22,7 +28,7 @@ docker run -d \
   -e LDAP_ADMIN_USER="cn=admin" \
   -e LDAP_ADMIN_PW="admin_password" \
   -e LDAP_CONFIG_ADMIN_PW="config_password" \
-  garthako/openldap:latest
+  ghcr.io/ghmer/openldap:v2.6
 ```
 
 Test connection:
@@ -68,7 +74,7 @@ ldapsearch -x -H ldap://localhost:1389 -b "dc=example,dc=com" \
 ```yaml
 services:
   openldap:
-    image: garthako/openldap:latest
+    image: ghcr.io/ghmer/openldap:v2.6
     container_name: openldap
     environment:
       LDAP_BASE_DN: "dc=example,dc=com"
@@ -95,7 +101,7 @@ volumes:
 ```yaml
 services:
   openldap:
-    image: garthako/openldap:latest
+    image: ghcr.io/ghmer/openldap:v2.6
     container_name: openldap
     environment:
       LDAP_BASE_DN: "dc=example,dc=com"
@@ -198,8 +204,8 @@ sudo chown -R 1001:1001 /path/to/volumes
 
 **TLS errors**: Check cert permissions (readable by UID 1001)
 ```bash
-chmod 644 server.crt ca.crt
-chmod 600 server.key
+chmod 444 server.crt ca.crt
+chmod 400 server.key
 ```
 
 **Connection refused**: Check logs
