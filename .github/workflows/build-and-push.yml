@@ -56,19 +56,24 @@ jobs:
             VERSION="${IMAGE_TAG}"
           fi
           
-          # Add GitHub Container Registry tags
-          TAG_ARGS="${GHCR_IMAGE}:${VERSION}"$'\n'"${GHCR_IMAGE}:latest"
+          # Build tags array
+          TAGS=("${GHCR_IMAGE}:${VERSION}" "${GHCR_IMAGE}:latest")
           
           # If this is a tag push, add the Git tag as an additional Docker tag
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             GIT_TAG="${GITHUB_REF#refs/tags/}"
-            TAG_ARGS="${TAG_ARGS}"$'\n'"${GHCR_IMAGE}:${GIT_TAG}"
+            TAGS+=("${GHCR_IMAGE}:${GIT_TAG}")
             echo "Building with tags: ${VERSION}, ${GIT_TAG}, latest"
           else
             echo "Building with tags: ${VERSION}, latest"
           fi
           
-          echo "tags=${TAG_ARGS}" >> "$GITHUB_OUTPUT"
+          # Output tags as newline-separated string using heredoc
+          {
+            echo "tags<<EOF"
+            printf '%s\n' "${TAGS[@]}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Build and push (multi-platform)
         uses: docker/build-push-action@v6
