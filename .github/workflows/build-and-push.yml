@@ -56,17 +56,13 @@ jobs:
             VERSION="${IMAGE_TAG}"
           fi
           
-          # Base tags for Docker Hub
-          TAG_ARGS="--tag ${IMAGE_NAME}:${VERSION} --tag ${IMAGE_NAME}:latest"
-          
           # Add GitHub Container Registry tags
-          TAG_ARGS="${TAG_ARGS} --tag ${GHCR_IMAGE}:${VERSION} --tag ${GHCR_IMAGE}:latest"
+          TAG_ARGS="${GHCR_IMAGE}:${VERSION} ${GHCR_IMAGE}:latest"
           
           # If this is a tag push, add the Git tag as an additional Docker tag
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             GIT_TAG="${GITHUB_REF#refs/tags/}"
-            TAG_ARGS="${TAG_ARGS} --tag ${IMAGE_NAME}:${GIT_TAG} --tag ${GHCR_IMAGE}:${GIT_TAG}"
-            echo "Building with tags: ${VERSION}, ${GIT_TAG}, latest for Docker Hub and GHCR"
+            TAG_ARGS="${TAG_ARGS} ${GHCR_IMAGE}:${GIT_TAG}"
           else
             echo "Building with tags: ${VERSION}, latest for Docker Hub and GHCR"
           fi
